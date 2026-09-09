@@ -28,7 +28,8 @@ function broadcast(room, message, except) {
 }
 
 const server = http.createServer((request, response) => {
-  const requested = request.url === '/' ? '/index.html' : request.url.split('?')[0];
+  const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
+  const requested = pathname === '/' ? '/index.html' : pathname;
   const filePath = path.normalize(path.join(PUBLIC_DIR, requested));
   if (!filePath.startsWith(PUBLIC_DIR)) {
     response.writeHead(403); response.end('Forbidden'); return;
