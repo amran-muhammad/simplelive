@@ -1,0 +1,14 @@
+{
+  "name": "open-room-live",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A host-approved browser live room powered by WebRTC.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
