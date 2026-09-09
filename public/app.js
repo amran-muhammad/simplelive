@@ -1,4 +1,4 @@
-const state = { socket: null, role: null, roomCode: null, stream: null, peers: new Map() };
+const state = { socket: null, role: null, roomCode: null, stream: null, peers: new Map(), pendingCandidates: new Map() };
 const $ = (selector) => document.querySelector(selector);
 const landing = $('#landing'); const studio = $('#studio'); const viewer = $('#viewer');
 
@@ -10,7 +10,7 @@ function roomUrl(code) { return `${location.origin}${location.pathname}?room=${c
 
 $('#start-live').addEventListener('click', async () => {
   state.role = 'host'; connect();
-  try { state.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); $('#local-video').srcObject = state.stream; $('#host-video-empty').classList.add('hidden'); } catch { toast('Camera access is needed to start a live room.'); return; }
+  try { state.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); $('#local-video').srcObject = state.stream; $('#host-video-empty').classList.add('hidden'); } catch (error) { const message = error.name === 'NotAllowedError' ? 'Allow camera and microphone access in your browser, then try again.' : 'Camera and microphone could not be opened on this device.'; toast(message); state.socket?.close(); return; }
   state.socket.addEventListener('open', () => send({ type: 'create-room' }), { once: true });
 });
 
@@ -23,6 +23,7 @@ async function makeHostPeer(viewerId) {
   const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
   state.peers.set(viewerId, peer); state.stream.getTracks().forEach((track) => peer.addTrack(track, state.stream));
   peer.onicecandidate = (event) => event.candidate && send({ type: 'signal', viewerId, signal: { candidate: event.candidate } });
+  peer.onconnectionstatechange = () => { if (['failed', 'disconnected'].includes(peer.connectionState)) toast('The viewer connection was interrupted.'); };
   const offer = await peer.createOffer(); await peer.setLocalDescription(offer); send({ type: 'signal', viewerId, signal: { description: peer.localDescription } });
 }
 
@@ -42,11 +43,17 @@ async function handleMessage(message) {
   if (message.type === 'signal') await handleSignal(message);
 }
 
+async function addPendingCandidates(peerKey, peer) {
+  const candidates = state.pendingCandidates.get(peerKey) || [];
+  for (const candidate of candidates) await peer.addIceCandidate(candidate);
+  state.pendingCandidates.delete(peerKey);
+}
+
 async function handleSignal(message) {
-  if (state.role === 'host') { const peer = state.peers.get(message.viewerId); if (!peer) return; if (message.signal.description) await peer.setRemoteDescription(message.signal.description); if (message.signal.candidate) await peer.addIceCandidate(message.signal.candidate); return; }
+  if (state.role === 'host') { const peer = state.peers.get(message.viewerId); if (!peer) return; if (message.signal.description) { await peer.setRemoteDescription(message.signal.description); await addPendingCandidates(message.viewerId, peer); } if (message.signal.candidate) { if (peer.remoteDescription) await peer.addIceCandidate(message.signal.candidate); else state.pendingCandidates.set(message.viewerId, [...(state.pendingCandidates.get(message.viewerId) || []), message.signal.candidate]); } return; }
   let peer = state.peers.get('host');
-  if (!peer) { peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); state.peers.set('host', peer); peer.ontrack = (event) => { $('#remote-video').srcObject = event.streams[0]; $('#viewer-waiting').classList.add('hidden'); $('#viewer-stage').classList.remove('hidden'); }; peer.onicecandidate = (event) => event.candidate && send({ type: 'signal', signal: { candidate: event.candidate } }); }
-  if (message.signal.description) { await peer.setRemoteDescription(message.signal.description); if (message.signal.description.type === 'offer') { const answer = await peer.createAnswer(); await peer.setLocalDescription(answer); send({ type: 'signal', signal: { description: peer.localDescription } }); } } if (message.signal.candidate) await peer.addIceCandidate(message.signal.candidate);
+  if (!peer) { peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); state.peers.set('host', peer); peer.ontrack = (event) => { $('#remote-video').srcObject = event.streams[0]; $('#viewer-waiting').classList.add('hidden'); $('#viewer-stage').classList.remove('hidden'); }; peer.onicecandidate = (event) => event.candidate && send({ type: 'signal', signal: { candidate: event.candidate } }); peer.onconnectionstatechange = () => { if (['failed', 'disconnected'].includes(peer.connectionState)) toast('The live connection was interrupted.'); }; }
+  if (message.signal.description) { await peer.setRemoteDescription(message.signal.description); await addPendingCandidates('host', peer); if (message.signal.description.type === 'offer') { const answer = await peer.createAnswer(); await peer.setLocalDescription(answer); send({ type: 'signal', signal: { description: peer.localDescription } }); } } if (message.signal.candidate) { if (peer.remoteDescription) await peer.addIceCandidate(message.signal.candidate); else state.pendingCandidates.set('host', [...(state.pendingCandidates.get('host') || []), message.signal.candidate]); }
 }
 
 const queryRoom = new URLSearchParams(location.search).get('room');
