@@ -49,4 +49,12 @@ async function handleSignal(message) {
   if (message.signal.description) { await peer.setRemoteDescription(message.signal.description); if (message.signal.description.type === 'offer') { const answer = await peer.createAnswer(); await peer.setLocalDescription(answer); send({ type: 'signal', signal: { description: peer.localDescription } }); } } if (message.signal.candidate) await peer.addIceCandidate(message.signal.candidate);
 }
 
-const queryRoom = new URLSearchParams(location.search).get('room'); if (queryRoom) $('#room-code').value = queryRoom.toUpperCase();
+const queryRoom = new URLSearchParams(location.search).get('room');
+if (queryRoom) {
+  $('#room-code').value = queryRoom.toUpperCase();
+  $('#room-code').required = false;
+  $('#room-code-field').classList.add('hidden');
+  $('#join-title').textContent = 'You are invited in';
+  $('#join-description').textContent = 'Tell the host who is at the door. They will approve you before the live appears.';
+  $('#guest-name').focus();
+}

@@ -32,13 +32,13 @@
       </article>
       <article class="entry-card join-card">
         <div class="card-number">02 / guest</div>
-        <h2>Join by invitation</h2>
-        <p>Have a room code? Ask to enter. The host decides when you come through.</p>
+        <h2 id="join-title">Join by invitation</h2>
+        <p id="join-description">Have a room code? Ask to enter. The host decides when you come through.</p>
         <form id="join-form">
-          <label for="room-code">Room code</label>
-          <div class="input-row"><input id="room-code" maxlength="6" placeholder="A1B2C3" autocomplete="off" required /><button class="button button-dark" type="submit">Request entry</button></div>
+          <div id="room-code-field"><label for="room-code">Room code</label><input id="room-code" maxlength="6" placeholder="A1B2C3" autocomplete="off" required /></div>
           <label for="guest-name">Your name</label>
           <input id="guest-name" maxlength="32" placeholder="How should we call you?" autocomplete="name" required />
+          <button class="button button-dark" type="submit">Request entry</button>
         </form>
       </article>
     </section>
