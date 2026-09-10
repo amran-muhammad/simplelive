@@ -48,7 +48,7 @@
   <main id="studio" class="studio view hidden">
     <div class="studio-head"><div><p class="eyebrow">You are live</p><h1>Room <span id="studio-room-code">------</span></h1></div><button id="end-live" class="button button-outline">End room</button></div>
     <div class="studio-layout">
-      <section class="stage-panel"><div class="stage-label"><span class="live-pill"><i></i> LIVE</span><span id="viewer-count">0 viewers</span></div><video id="local-video" autoplay muted playsinline></video><div class="empty-video" id="host-video-empty">Camera preview will appear here</div></section>
+      <section class="stage-panel"><div class="stage-label"><span class="live-pill"><i></i> LIVE</span><span id="viewer-count">0 viewers</span></div><div id="host-video-grid" class="video-grid"><div class="video-tile local-tile"><video id="local-video" autoplay muted playsinline></video><span>You</span></div></div><div class="empty-video" id="host-video-empty">Camera preview will appear here</div></section>
       <aside class="requests-panel"><div class="panel-title"><h2>Entry requests</h2><span id="request-count">0</span></div><div id="request-list" class="request-list"><div class="empty-state">Your room is ready.<br>People asking to join will appear here.</div></div><div class="share-box"><span class="share-label">Share this room</span><div class="share-link"><span id="share-link-text">—</span><button id="copy-link" title="Copy room link">⧉</button></div><small>Anyone with the link can ask. You still approve every entry.</small></div></aside>
     </div>
   </main>
@@ -56,7 +56,7 @@
   <main id="viewer" class="viewer view hidden">
     <div class="viewer-head"><a class="brand" href="/"><span class="brand-mark"><i></i><i></i><i></i></span><span>open room</span></a><span id="viewer-room-label" class="room-label">ROOM ------</span></div>
     <section id="viewer-waiting" class="viewer-message"><span class="waiting-mark">◌</span><p class="eyebrow">Request sent</p><h1>Waiting at the door.</h1><p>The host will let you in when they are ready. Keep this tab open.</p></section>
-    <section id="viewer-stage" class="viewer-stage hidden"><div class="stage-label"><span class="live-pill"><i></i> LIVE</span><span>connected</span></div><video id="remote-video" autoplay playsinline></video></section>
+    <section id="viewer-stage" class="viewer-stage hidden"><div class="stage-label"><span class="live-pill"><i></i> LIVE</span><span>connected</span></div><div class="video-grid viewer-video-grid"><div class="video-tile"><video id="remote-video" autoplay playsinline></video><span>Host</span></div><div class="video-tile self-tile"><video id="viewer-local-video" autoplay muted playsinline></video><span>You</span></div></div></section>
   </main>
 
   <div id="toast" class="toast" role="status"></div>
