@@ -4,6 +4,8 @@ html, body { margin: 0; min-height: 100%; background: var(--paper); color: var(-
 body { background-image: radial-gradient(circle at 75% 15%, rgba(217,243,107,.45), transparent 23rem), linear-gradient(120deg, #f4f1ea 0%, #ebe9e0 100%); }
 .grain { position: fixed; inset: 0; pointer-events: none; opacity: .035; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E"); }
 .topbar, .viewer-head { display:flex; justify-content:space-between; align-items:center; padding: 28px 5vw; position:relative; z-index:2; }
+.topbar-actions { display:flex; align-items:center; gap:18px; }
+.fullscreen-button { color:var(--ink); border-color:rgba(16,20,23,.28); padding:9px 12px; }
 .brand { color: var(--ink); text-decoration:none; display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:-.04em; font-size:17px; }
 .brand-mark { display:flex; align-items:end; gap:2px; width:20px; height:20px; padding:3px; border:2px solid var(--ink); border-radius:50%; }
 .brand-mark i { display:block; width:3px; background:var(--ink); border-radius:4px; } .brand-mark i:nth-child(1){height:6px}.brand-mark i:nth-child(2){height:11px}.brand-mark i:nth-child(3){height:15px}
@@ -54,6 +56,8 @@ body { background-image: radial-gradient(circle at 75% 15%, rgba(217,243,107,.45
 	.topbar, .viewer-head { padding: 18px 5vw; }
 	.brand { font-size: 15px; }
 	.topbar-note { font-size: 8px; }
+	.topbar-actions { gap:8px; }
+	.fullscreen-button { padding:8px 9px; font-size:10px; }
 	.landing { margin-top: 3vh; }
 	.intro h1 { font-size: clamp(42px, 13vw, 58px); }
 	.lede { font-size: 14px; margin-top: 20px; }
@@ -150,7 +154,7 @@ body { background-image: radial-gradient(circle at 75% 15%, rgba(217,243,107,.45
 .viewer-stage video { min-height: 220px; }
 .stage-panel:fullscreen, .viewer-stage:fullscreen { border-radius: 0; }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
 	.studio-layout { grid-template-columns: 1fr; }
 	.requests-panel { min-height: 0; }
 	.request-list { min-height: 90px; }
@@ -165,4 +169,37 @@ body { background-image: radial-gradient(circle at 75% 15%, rgba(217,243,107,.45
 	.control-button::before { left: 9px; }
 	.leave-button { flex-basis: 100%; }
 	.viewer-stage { margin-top: 5vh; }
+}
+
+.stage-panel.is-screen-sharing, .viewer-stage.is-screen-sharing { display: grid; grid-template-columns: minmax(0, 4fr) minmax(180px, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 10px; }
+.screen-share-view { position: relative; grid-column: 1; grid-row: 1; min-width: 0; min-height: 0; background: #080c0d; border: 1px solid rgba(255,255,255,.13); border-radius: 8px; overflow: hidden; }
+.screen-share-view video { width: 100%; height: 100%; min-height: 0; object-fit: contain; background: #080c0d; }
+.screen-fullscreen { position: absolute; right: 12px; bottom: 12px; border: 1px solid rgba(255,255,255,.24); border-radius: 6px; padding: 9px 11px; background: rgba(16,20,23,.86); color: #f4f1ea; cursor: pointer; font: 10px 'DM Mono', monospace; }
+.screen-fullscreen:hover { background: #2d3a3b; }
+.stage-panel.is-screen-sharing .video-grid, .viewer-stage.is-screen-sharing .video-grid { grid-column: 2; grid-row: 1; grid-template-columns: 1fr; grid-auto-rows: minmax(110px, 1fr); min-height: 0; max-height: none; overflow: auto; padding-top: 30px; }
+.stage-panel.is-screen-sharing .video-tile, .viewer-stage.is-screen-sharing .video-tile { min-height: 110px; }
+.stage-panel.is-screen-sharing .meeting-controls, .viewer-stage.is-screen-sharing .meeting-controls { grid-column: 1 / -1; grid-row: 2; margin-top: 0; }
+
+@media (max-width: 750px) {
+	.stage-panel.is-screen-sharing, .viewer-stage.is-screen-sharing { display: flex; flex-direction: column; gap: 8px; }
+	.stage-panel.is-screen-sharing .screen-share-view, .viewer-stage.is-screen-sharing .screen-share-view { min-height: min(55vh, 420px); }
+	.stage-panel.is-screen-sharing .video-grid, .viewer-stage.is-screen-sharing .video-grid { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: auto; max-height: none; overflow: visible; padding-top: 24px; }
+	.stage-panel.is-screen-sharing .meeting-controls, .viewer-stage.is-screen-sharing .meeting-controls { margin-top: 0; }
+}
+
+@media (max-width: 420px) {
+	.stage-panel.is-screen-sharing .video-grid, .viewer-stage.is-screen-sharing .video-grid { grid-template-columns: 1fr; }
+}
+
+.video-grid { height: auto; grid-auto-rows: minmax(220px, 1fr); align-content: stretch; }
+.video-tile { aspect-ratio: auto; min-height: 0; }
+.video-tile video { min-height: 0; }
+
+@media (max-width: 750px) {
+	.video-grid { grid-auto-rows: auto; }
+	.video-tile { min-height: 150px; }
+}
+
+@media (max-width: 420px) {
+	.video-tile { min-height: 190px; }
 }

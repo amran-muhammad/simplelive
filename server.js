@@ -53,7 +53,7 @@ wss.on('connection', (socket) => {
 
     if (message.type === 'create-room') {
       const code = roomCode();
-      const room = { host: socket, viewers: new Map(), policy: { mic: true, camera: true } };
+      const room = { host: socket, viewers: new Map(), policy: { mic: true, camera: true }, screenSharer: null };
       rooms.set(code, room);
       participant = { role: 'host', roomCode: code };
       send(socket, { type: 'room-created', roomCode: code });
@@ -101,6 +101,27 @@ wss.on('connection', (socket) => {
       return;
     }
 
+    if (message.type === 'screen-share-request') {
+      const owner = participant.role === 'host' ? { role: 'host' } : { role: 'viewer', viewerId: participant.viewerId };
+      const ownerKey = owner.role === 'host' ? 'host' : owner.viewerId;
+      if (room.screenSharer && room.screenSharer !== ownerKey) {
+        send(socket, { type: 'screen-share-denied', message: 'Someone else is already sharing their screen.' });
+        return;
+      }
+      room.screenSharer = ownerKey;
+      send(socket, { type: 'screen-share-approved' });
+      broadcast(room, { type: 'screen-share-start', owner });
+      return;
+    }
+
+    if (message.type === 'screen-share-stop') {
+      const ownerKey = participant.role === 'host' ? 'host' : participant.viewerId;
+      if (room.screenSharer !== ownerKey) return;
+      room.screenSharer = null;
+      broadcast(room, { type: 'screen-share-stop' });
+      return;
+    }
+
     if (message.type === 'chat') {
       const name = participant.role === 'host' ? 'Host' : room.viewers.get(participant.viewerId)?.name || 'Guest';
       const kind = ['text', 'gif', 'reaction'].includes(message.kind) ? message.kind : 'text';
@@ -140,6 +161,7 @@ wss.on('connection', (socket) => {
       for (const viewer of room.viewers.values()) send(viewer.socket, { type: 'room-ended' });
       rooms.delete(participant.roomCode);
     } else {
+      if (room.screenSharer === participant.viewerId) broadcast(room, { type: 'screen-share-stop' }, socket);
       room.viewers.delete(participant.viewerId);
       send(room.host, { type: 'viewer-left', viewerId: participant.viewerId });
     }
