@@ -72,3 +72,20 @@ body { background-image: radial-gradient(circle at 75% 15%, rgba(217,243,107,.45
 	.viewer-video-grid { grid-template-columns: 1fr; }
 	.security-note { font-size: 9px; line-height: 1.5; }
 }
+@media (max-width: 750px) {
+	.chat-panel { padding: 14px 12px; }
+	.chat-panel .panel-title { padding-bottom: 8px; }
+	.chat-messages { min-height: 84px; max-height: 180px; padding: 2px 4px; }
+	.chat-messages p { margin: 8px 0; overflow-wrap: anywhere; }
+	.chat-form { align-items: stretch; }
+	.chat-form input { min-height: 42px; padding: 10px; font-size: 12px; }
+	.chat-form .button { min-width: 62px; min-height: 42px; }
+	.viewer-chat { margin: 12px 0 0; max-width: none; }
+}
+@media (max-width: 420px) {
+	.chat-panel { padding: 12px 8px; }
+	.chat-messages { min-height: 96px; max-height: 210px; }
+	.chat-form { gap: 5px; }
+	.chat-form input { width: 0; }
+	.chat-form .button { min-width: 58px; padding-left: 8px; padding-right: 8px; }
+}
