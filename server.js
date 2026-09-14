@@ -103,7 +103,8 @@ wss.on('connection', (socket) => {
 
     if (message.type === 'chat') {
       const name = participant.role === 'host' ? 'Host' : room.viewers.get(participant.viewerId)?.name || 'Guest';
-      broadcast(room, { type: 'chat', name, text: String(message.text || '').slice(0, 240) });
+      const kind = ['text', 'gif', 'reaction'].includes(message.kind) ? message.kind : 'text';
+      broadcast(room, { type: 'chat', kind, name, text: String(message.text || '').slice(0, 500) });
       return;
     }
 

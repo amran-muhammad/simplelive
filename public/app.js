@@ -36,13 +36,28 @@ function setMedia(kind, enabled) { state.stream?.getTracks().filter((track) => t
 function updateMediaButtons() { const mic = state.role === 'host' ? $('#host-mic') : $('#viewer-mic'); const camera = state.role === 'host' ? $('#host-camera') : $('#viewer-camera'); if (mic) mic.textContent = `Mic ${state.media.mic ? 'on' : 'off'}`; if (camera) camera.textContent = `Camera ${state.media.camera ? 'on' : 'off'}`; }
 function stopAllMedia() { [...(state.stream?.getTracks() || []), ...(state.screenStream?.getTracks() || [])].forEach((track) => track.stop()); }
 async function shareScreen() { try { state.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true }); const screenTrack = state.screenStream.getVideoTracks()[0]; state.peers.forEach((peer) => { const sender = peer.getSenders().find((item) => item.track?.kind === 'video'); if (sender) sender.replaceTrack(screenTrack); else peer.addTrack(screenTrack, state.screenStream); }); const local = state.role === 'host' ? $('#local-video') : $('#viewer-local-video'); local.srcObject = state.screenStream; if (state.role === 'host') state.peers.forEach((peer, viewerId) => renegotiatePeer(viewerId, peer)); else send({ type: 'renegotiate' }); screenTrack.onended = () => { const camera = state.stream?.getVideoTracks()[0]; state.peers.forEach((peer) => peer.getSenders().find((item) => item.track?.kind === 'video')?.replaceTrack(camera || null)); local.srcObject = state.stream || null; }; } catch { toast('Screen sharing was cancelled or is unavailable.'); } }
-function submitChat(input) { const message = input.value.trim(); if (!message) return; send({ type: 'chat', text: message }); input.value = ''; }
-function addChatMessage(target, name, text) { const item = document.createElement('p'); item.innerHTML = `<strong>${escapeHtml(name)}</strong> ${escapeHtml(text)}`; target.appendChild(item); target.scrollTop = target.scrollHeight; }
+function submitChat(input) { const message = input.value.trim(); if (!message) return; send({ type: 'chat', kind: 'text', text: message }); input.value = ''; }
+function addChatMessage(target, message) {
+  const item = document.createElement('div'); item.className = 'chat-message';
+  const header = `<strong>${escapeHtml(message.name)}</strong>`;
+  const body = message.kind === 'gif' && /^https?:\/\//i.test(message.text) ? `<img class="chat-gif" src="${escapeHtml(message.text)}" alt="GIF shared by ${escapeHtml(message.name)}" loading="lazy">` : message.kind === 'reaction' ? `<span class="chat-reaction">${escapeHtml(message.text)}</span>` : `<span>${escapeHtml(message.text)}</span>`;
+  item.innerHTML = `<div class="chat-bubble"><div>${header}</div>${body}</div><div class="reaction-row"><button type="button" data-reaction="❤️">❤️</button><button type="button" data-reaction="😂">😂</button><button type="button" data-reaction="👏">👏</button><button type="button" data-reaction="🔥">🔥</button></div>`;
+  item.querySelectorAll('[data-reaction]').forEach((button) => { button.onclick = () => send({ type: 'chat', kind: 'reaction', text: `${button.dataset.reaction} ${message.name}` }); });
+  target.appendChild(item); target.scrollTop = target.scrollHeight;
+}
+function addEmoji(formId, emoji) { const input = document.querySelector(`#${formId} input`); input.value += emoji; input.focus(); }
+function openGifPrompt(input) { const url = window.prompt('Paste a GIF URL'); if (url && /^https?:\/\//i.test(url.trim())) { send({ type: 'chat', kind: 'gif', text: url.trim() }); input.focus(); } else if (url) toast('Please use a valid GIF URL.'); }
 
 $('#host-mic').onclick = () => state.media.mic ? setMedia('audio', false) : requestMedia('mic');
 $('#host-camera').onclick = () => state.media.camera ? setMedia('video', false) : requestMedia('camera');
 $('#host-share').onclick = shareScreen; $('#viewer-mic').onclick = () => state.media.mic ? setMedia('audio', false) : requestMedia('mic'); $('#viewer-camera').onclick = () => state.media.camera ? setMedia('video', false) : requestMedia('camera'); $('#viewer-share').onclick = shareScreen;
+async function toggleFullscreen(target, button) { if (!document.fullscreenElement) { if (!target?.requestFullscreen) return toast('Full screen is not supported in this browser.'); try { await target.requestFullscreen(); button.textContent = 'Exit full screen'; } catch { toast('Full screen permission was denied.'); } } else { await document.exitFullscreen(); button.textContent = 'Full screen'; } }
+$('#host-fullscreen').onclick = () => toggleFullscreen($('#host-stage'), $('#host-fullscreen')); $('#viewer-fullscreen').onclick = () => toggleFullscreen($('#viewer-stage'), $('#viewer-fullscreen'));
+document.addEventListener('fullscreenchange', () => { const active = Boolean(document.fullscreenElement); [$('#host-fullscreen'), $('#viewer-fullscreen')].forEach((button) => { if (button) button.textContent = active ? 'Exit full screen' : 'Full screen'; }); });
 $('#host-chat-form').onsubmit = (event) => { event.preventDefault(); submitChat($('#host-chat-input')); }; $('#viewer-chat-form').onsubmit = (event) => { event.preventDefault(); submitChat($('#viewer-chat-input')); };
+document.querySelectorAll('[data-chat-action="emoji"]').forEach((button) => button.onclick = () => { const picker = document.querySelector(`[data-picker="${button.closest('form').id}"]`); picker.classList.toggle('hidden'); });
+document.querySelectorAll('.emoji-picker').forEach((picker) => { const emojis = picker.textContent.trim().split(/\s+/); picker.innerHTML = emojis.map((emoji) => `<button type="button">${emoji}</button>`).join(''); picker.querySelectorAll('button').forEach((button) => button.onclick = () => addEmoji(picker.dataset.picker, button.textContent.trim())); });
+document.querySelectorAll('[data-chat-action="gif"]').forEach((button) => button.onclick = () => openGifPrompt(button.closest('form').querySelector('input')));
 $('#allow-guest-mic').onchange = () => send({ type: 'media-policy', policy: { mic: $('#allow-guest-mic').checked, camera: $('#allow-guest-camera').checked } }); $('#allow-guest-camera').onchange = () => send({ type: 'media-policy', policy: { mic: $('#allow-guest-mic').checked, camera: $('#allow-guest-camera').checked } });
 
 async function makeHostPeer(viewerId) {
@@ -78,7 +93,7 @@ async function handleMessage(message) {
   if (message.type === 'viewer-left') { document.querySelector(`[data-viewer-id="${message.viewerId}"]`)?.remove(); state.peers.get(message.viewerId)?.close(); state.peers.delete(message.viewerId); state.viewerNames.delete(message.viewerId); }
   if (message.type === 'viewer-count') $('#viewer-count').textContent = `${message.count} viewer${message.count === 1 ? '' : 's'}`;
   if (message.type === 'media-policy') { state.policy = message.policy; $('#viewer-mic').disabled = !state.policy.mic; $('#viewer-camera').disabled = !state.policy.camera; if (!state.policy.mic) setMedia('audio', false); if (!state.policy.camera) setMedia('video', false); }
-  if (message.type === 'chat') { addChatMessage(state.role === 'host' ? $('#host-chat') : $('#viewer-chat'), message.name, message.text); }
+  if (message.type === 'chat') { addChatMessage(state.role === 'host' ? $('#host-chat') : $('#viewer-chat'), message); }
   if (message.type === 'renegotiate' && state.role === 'host') { const peer = state.peers.get(message.viewerId); if (peer) await renegotiatePeer(message.viewerId, peer); }
   if (message.type === 'waiting') { show(viewer); $('#viewer-room-label').textContent = `ROOM ${message.roomCode}`; }
   if (message.type === 'approved') toast('You are in. Connecting to the room…');
