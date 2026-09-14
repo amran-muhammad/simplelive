@@ -112,6 +112,15 @@ wss.on('connection', (socket) => {
       return;
     }
 
+    if (participant.role === 'viewer' && message.type === 'leave-room') {
+      room.viewers.delete(participant.viewerId);
+      send(room.host, { type: 'viewer-left', viewerId: participant.viewerId });
+      send(room.host, { type: 'viewer-count', count: [...room.viewers.values()].filter((item) => item.approved).length });
+      participant = null;
+      socket.close();
+      return;
+    }
+
     if (message.type === 'signal') {
       if (participant.role === 'host') {
         const viewer = room.viewers.get(message.viewerId);

@@ -1,4 +1,4 @@
-const state = { socket: null, role: null, roomCode: null, stream: null, screenStream: null, peers: new Map(), pendingCandidates: new Map(), policy: { mic: true, camera: true }, media: { mic: false, camera: false } };
+const state = { socket: null, role: null, roomCode: null, name: '', stream: null, screenStream: null, peers: new Map(), pendingCandidates: new Map(), viewerNames: new Map(), policy: { mic: true, camera: true }, media: { mic: false, camera: false } };
 const $ = (selector) => document.querySelector(selector);
 const landing = $('#landing'); const studio = $('#studio'); const viewer = $('#viewer');
 
@@ -13,10 +13,11 @@ $('#start-live').addEventListener('click', async () => {
   state.socket.addEventListener('open', () => send({ type: 'create-room' }), { once: true });
 });
 
-$('#join-form').addEventListener('submit', (event) => { event.preventDefault(); state.role = 'viewer'; state.roomCode = $('#room-code').value.trim().toUpperCase(); const name = $('#guest-name').value.trim(); if (!state.roomCode || !name) return; $('#viewer-room-label').textContent = `ROOM ${state.roomCode}`; show(viewer); connect(); state.socket.addEventListener('open', () => send({ type: 'join-room', roomCode: state.roomCode, name }), { once: true }); });
+$('#join-form').addEventListener('submit', (event) => { event.preventDefault(); state.role = 'viewer'; state.roomCode = $('#room-code').value.trim().toUpperCase(); state.name = $('#guest-name').value.trim(); if (!state.roomCode || !state.name) return; $('#viewer-name-tile').textContent = state.name; $('#viewer-room-label').textContent = `ROOM ${state.roomCode}`; show(viewer); connect(); state.socket.addEventListener('open', () => send({ type: 'join-room', roomCode: state.roomCode, name: state.name }), { once: true }); });
 
 $('#copy-link').addEventListener('click', async () => { await navigator.clipboard.writeText($('#share-link-text').dataset.url); toast('Invite link copied.'); });
 $('#end-live').addEventListener('click', () => { stopAllMedia(); state.socket?.close(); location.href = location.pathname; });
+$('#leave-meeting').addEventListener('click', () => { stopAllMedia(); state.socket?.send(JSON.stringify({ type: 'leave-room' })); state.socket?.close(); location.href = location.pathname; });
 
 async function requestMedia(kind) {
   if (kind === 'camera' && !state.policy.camera) return toast('The host has disabled guest cameras.');
@@ -61,20 +62,20 @@ function addRemoteViewer(viewerId, stream) {
     tile = document.createElement('div');
     tile.className = 'video-tile';
     tile.dataset.viewerId = viewerId;
-    tile.innerHTML = '<video autoplay playsinline></video><span>Guest</span>';
+    tile.innerHTML = `<video autoplay playsinline></video><span>${escapeHtml(state.viewerNames.get(viewerId) || 'Guest')}</span>`;
     $('#host-video-grid').appendChild(tile);
   }
   tile.querySelector('video').srcObject = stream;
 }
 
-function addRequest(viewerId, name) { const list = $('#request-list'); const empty = list.querySelector('.empty-state'); if (empty) empty.remove(); const item = document.createElement('div'); item.className = 'request'; item.dataset.viewerId = viewerId; item.innerHTML = `<span>${escapeHtml(name)}</span><span class="request-actions"><button class="approve" title="Approve">✓</button><button class="reject" title="Decline">×</button></span>`; item.querySelector('.approve').onclick = () => { send({ type: 'approve-viewer', viewerId }); item.remove(); updateRequestCount(); makeHostPeer(viewerId); }; item.querySelector('.reject').onclick = () => { send({ type: 'reject-viewer', viewerId }); item.remove(); updateRequestCount(); }; list.appendChild(item); updateRequestCount(); }
+function addRequest(viewerId, name) { state.viewerNames.set(viewerId, name); const list = $('#request-list'); const empty = list.querySelector('.empty-state'); if (empty) empty.remove(); const item = document.createElement('div'); item.className = 'request'; item.dataset.viewerId = viewerId; item.innerHTML = `<span>${escapeHtml(name)}</span><span class="request-actions"><button class="approve" title="Approve">✓</button><button class="reject" title="Decline">×</button></span>`; item.querySelector('.approve').onclick = () => { send({ type: 'approve-viewer', viewerId }); item.remove(); updateRequestCount(); makeHostPeer(viewerId); }; item.querySelector('.reject').onclick = () => { send({ type: 'reject-viewer', viewerId }); item.remove(); updateRequestCount(); }; list.appendChild(item); updateRequestCount(); }
 function updateRequestCount() { $('#request-count').textContent = document.querySelectorAll('.request').length; }
 function escapeHtml(value) { return value.replace(/[&<>'"]/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char])); }
 
 async function handleMessage(message) {
   if (message.type === 'room-created') { state.roomCode = message.roomCode; $('#studio-room-code').textContent = message.roomCode; $('#share-link-text').textContent = roomUrl(message.roomCode); $('#share-link-text').dataset.url = roomUrl(message.roomCode); show(studio); history.replaceState({}, '', `?room=${message.roomCode}`); }
   if (message.type === 'join-request') addRequest(message.viewerId, message.name);
-  if (message.type === 'viewer-left') { document.querySelector(`[data-viewer-id="${message.viewerId}"]`)?.remove(); state.peers.get(message.viewerId)?.close(); state.peers.delete(message.viewerId); }
+  if (message.type === 'viewer-left') { document.querySelector(`[data-viewer-id="${message.viewerId}"]`)?.remove(); state.peers.get(message.viewerId)?.close(); state.peers.delete(message.viewerId); state.viewerNames.delete(message.viewerId); }
   if (message.type === 'viewer-count') $('#viewer-count').textContent = `${message.count} viewer${message.count === 1 ? '' : 's'}`;
   if (message.type === 'media-policy') { state.policy = message.policy; $('#viewer-mic').disabled = !state.policy.mic; $('#viewer-camera').disabled = !state.policy.camera; if (!state.policy.mic) setMedia('audio', false); if (!state.policy.camera) setMedia('video', false); }
   if (message.type === 'chat') { addChatMessage(state.role === 'host' ? $('#host-chat') : $('#viewer-chat'), message.name, message.text); }
