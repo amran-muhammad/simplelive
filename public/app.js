@@ -67,12 +67,16 @@ function stopScreenShare(notify = true) {
   if (!state.screenStream && !state.screenSharing) return;
   [...(state.screenStream?.getTracks() || [])].forEach((track) => track.stop());
   const camera = state.stream?.getVideoTracks()[0] || null;
-  state.peers.forEach((peer) => peer.getSenders().find((item) => item.track?.kind === 'video')?.replaceTrack(camera));
+  const microphone = state.stream?.getAudioTracks()[0] || null;
+  state.peers.forEach((peer) => {
+    peer.getSenders().find((item) => item.track?.kind === 'video')?.replaceTrack(camera);
+    peer.getSenders().find((item) => item.track?.kind === 'audio')?.replaceTrack(microphone);
+  });
   if (state.role === 'host') $('#local-video').srcObject = state.stream || null; else $('#viewer-local-video').srcObject = state.stream || null;
   state.screenStream = null; state.screenSharing = false; state.screenSharePending = false; state.screenShareOwner = null; applyScreenShare(null);
   if (notify) send({ type: 'screen-share-stop' });
 }
-async function startScreenCapture() { try { state.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true }); state.screenSharing = true; applyScreenShare(state.screenShareOwner); const screenTrack = state.screenStream.getVideoTracks()[0]; state.peers.forEach((peer) => { const sender = peer.getSenders().find((item) => item.track?.kind === 'video'); if (sender) sender.replaceTrack(screenTrack); else peer.addTrack(screenTrack, state.screenStream); }); if (state.role === 'host') state.peers.forEach((peer, viewerId) => renegotiatePeer(viewerId, peer)); else send({ type: 'renegotiate' }); screenTrack.onended = () => stopScreenShare(); } catch { state.screenSharePending = false; send({ type: 'screen-share-stop' }); toast('Screen sharing was cancelled or is unavailable.'); } }
+async function startScreenCapture() { try { state.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }); state.screenSharing = true; applyScreenShare(state.screenShareOwner); const screenTrack = state.screenStream.getVideoTracks()[0]; const audioTrack = state.screenStream.getAudioTracks()[0]; state.peers.forEach((peer) => { const videoSender = peer.getSenders().find((item) => item.track?.kind === 'video'); if (videoSender) videoSender.replaceTrack(screenTrack); else peer.addTrack(screenTrack, state.screenStream); if (audioTrack) { const audioSender = peer.getSenders().find((item) => item.track?.kind === 'audio'); if (audioSender) audioSender.replaceTrack(audioTrack); else peer.addTrack(audioTrack, state.screenStream); } }); if (!audioTrack) toast('Screen is sharing without audio. Choose a tab or window with audio enabled.'); if (state.role === 'host') state.peers.forEach((peer, viewerId) => renegotiatePeer(viewerId, peer)); else send({ type: 'renegotiate' }); screenTrack.onended = () => stopScreenShare(); } catch { state.screenSharePending = false; send({ type: 'screen-share-stop' }); toast('Screen sharing was cancelled or is unavailable.'); } }
 function shareScreen() { if (state.screenSharing) return stopScreenShare(); if (state.screenSharePending) return; state.screenSharePending = true; send({ type: 'screen-share-request' }); }
 function submitChat(input) { const message = input.value.trim(); if (!message) return; send({ type: 'chat', kind: 'text', text: message }); input.value = ''; }
 function addChatMessage(target, message) {
