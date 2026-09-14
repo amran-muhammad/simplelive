@@ -18,6 +18,22 @@ body { background-image: radial-gradient(circle at 75% 15%, rgba(217,243,107,.45
 .video-tile { position:relative; min-height:220px; background:#1d2525; overflow:hidden; }
 .video-tile video { width:100%; height:100%; min-height:220px; object-fit:cover; background:#1d2525; }
 .video-tile span { position:absolute; left:10px; bottom:10px; color:white; background:rgba(16,20,23,.72); padding:5px 8px; font:10px 'DM Mono',monospace; text-transform:uppercase; }
+.meeting-controls { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:12px; }
+.control-button { border:1px solid rgba(255,255,255,.18); background:#273033; color:#f4f1ea; padding:10px 12px; cursor:pointer; font:11px 'DM Mono',monospace; }
+.control-button:hover { background:#3b4749; }
+.control-button:disabled { opacity:.4; cursor:not-allowed; }
+.host-policy { padding:14px 18px; border-top:1px solid var(--line); display:grid; gap:9px; font-size:12px; }
+.host-policy label { display:flex; gap:8px; align-items:center; color:var(--muted); }
+.host-policy input { accent-color:var(--orange); }
+.chat-panel { border-top:1px solid var(--line); padding:14px; }
+.chat-panel .panel-title { padding:0 0 10px; border:0; }
+.chat-messages { min-height:70px; max-height:130px; overflow:auto; font-size:12px; color:var(--muted); }
+.chat-messages p { margin:7px 0; line-height:1.4; }
+.chat-messages strong { color:var(--ink); }
+.chat-form { display:flex; gap:6px; }
+.chat-form input { min-width:0; flex:1; border:1px solid var(--line); padding:9px; background:rgba(255,255,255,.35); font:11px Manrope,sans-serif; }
+.chat-form .button { padding:9px 11px; }
+.viewer-chat { max-width:600px; margin:14px auto 0; background:rgba(255,255,255,.32); }
 @media (max-width: 750px) {
 	.topbar, .viewer-head { padding: 18px 5vw; }
 	.brand { font-size: 15px; }

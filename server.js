@@ -53,7 +53,7 @@ wss.on('connection', (socket) => {
 
     if (message.type === 'create-room') {
       const code = roomCode();
-      const room = { host: socket, viewers: new Map() };
+      const room = { host: socket, viewers: new Map(), policy: { mic: true, camera: true } };
       rooms.set(code, room);
       participant = { role: 'host', roomCode: code };
       send(socket, { type: 'room-created', roomCode: code });
@@ -82,6 +82,7 @@ wss.on('connection', (socket) => {
       if (!viewer) return;
       viewer.approved = true;
       send(viewer.socket, { type: 'approved', viewerId: viewer.id });
+      send(viewer.socket, { type: 'media-policy', policy: room.policy });
       broadcast(room, { type: 'viewer-count', count: [...room.viewers.values()].filter((item) => item.approved).length });
       return;
     }
@@ -91,6 +92,23 @@ wss.on('connection', (socket) => {
       if (!viewer) return;
       send(viewer.socket, { type: 'rejected' });
       room.viewers.delete(message.viewerId);
+      return;
+    }
+
+    if (participant.role === 'host' && message.type === 'media-policy') {
+      room.policy = { mic: Boolean(message.policy?.mic), camera: Boolean(message.policy?.camera) };
+      for (const viewer of room.viewers.values()) send(viewer.socket, { type: 'media-policy', policy: room.policy });
+      return;
+    }
+
+    if (message.type === 'chat') {
+      const name = participant.role === 'host' ? 'Host' : room.viewers.get(participant.viewerId)?.name || 'Guest';
+      broadcast(room, { type: 'chat', name, text: String(message.text || '').slice(0, 240) });
+      return;
+    }
+
+    if (participant.role === 'viewer' && message.type === 'renegotiate') {
+      send(room.host, { type: 'renegotiate', viewerId: participant.viewerId });
       return;
     }
 
