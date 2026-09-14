@@ -33,7 +33,20 @@ async function requestMedia(kind) {
 }
 function addTrackToPeers(track) { state.peers.forEach((peer) => peer.addTrack(track, state.stream)); }
 function setMedia(kind, enabled) { state.stream?.getTracks().filter((track) => track.kind === kind).forEach((track) => { track.enabled = enabled; }); state.media[kind === 'video' ? 'camera' : 'mic'] = enabled; updateMediaButtons(); }
-function updateMediaButtons() { const mic = state.role === 'host' ? $('#host-mic') : $('#viewer-mic'); const camera = state.role === 'host' ? $('#host-camera') : $('#viewer-camera'); if (mic) mic.textContent = `Mic ${state.media.mic ? 'on' : 'off'}`; if (camera) camera.textContent = `Camera ${state.media.camera ? 'on' : 'off'}`; }
+function updateMediaButtons() {
+  const mic = state.role === 'host' ? $('#host-mic') : $('#viewer-mic');
+  const camera = state.role === 'host' ? $('#host-camera') : $('#viewer-camera');
+  if (mic) {
+    mic.textContent = `Mic ${state.media.mic ? 'on' : 'off'}`;
+    mic.setAttribute('aria-pressed', String(state.media.mic));
+    mic.classList.toggle('is-active', state.media.mic);
+  }
+  if (camera) {
+    camera.textContent = `Camera ${state.media.camera ? 'on' : 'off'}`;
+    camera.setAttribute('aria-pressed', String(state.media.camera));
+    camera.classList.toggle('is-active', state.media.camera);
+  }
+}
 function stopAllMedia() { [...(state.stream?.getTracks() || []), ...(state.screenStream?.getTracks() || [])].forEach((track) => track.stop()); }
 async function shareScreen() { try { state.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true }); const screenTrack = state.screenStream.getVideoTracks()[0]; state.peers.forEach((peer) => { const sender = peer.getSenders().find((item) => item.track?.kind === 'video'); if (sender) sender.replaceTrack(screenTrack); else peer.addTrack(screenTrack, state.screenStream); }); const local = state.role === 'host' ? $('#local-video') : $('#viewer-local-video'); local.srcObject = state.screenStream; if (state.role === 'host') state.peers.forEach((peer, viewerId) => renegotiatePeer(viewerId, peer)); else send({ type: 'renegotiate' }); screenTrack.onended = () => { const camera = state.stream?.getVideoTracks()[0]; state.peers.forEach((peer) => peer.getSenders().find((item) => item.track?.kind === 'video')?.replaceTrack(camera || null)); local.srcObject = state.stream || null; }; } catch { toast('Screen sharing was cancelled or is unavailable.'); } }
 function submitChat(input) { const message = input.value.trim(); if (!message) return; send({ type: 'chat', kind: 'text', text: message }); input.value = ''; }
