@@ -7,6 +7,7 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const rooms = new Map();
+const RECONNECT_GRACE = 30000;
 
 function roomCode() {
   let code;
@@ -53,10 +54,10 @@ wss.on('connection', (socket) => {
 
     if (message.type === 'create-room') {
       const code = roomCode();
-      const room = { host: socket, viewers: new Map(), policy: { mic: true, camera: true }, screenSharer: null };
+      const room = { host: socket, hostToken: crypto.randomUUID(), viewers: new Map(), policy: { mic: true, camera: true }, screenSharer: null, cleanupTimer: null };
       rooms.set(code, room);
       participant = { role: 'host', roomCode: code };
-      send(socket, { type: 'room-created', roomCode: code });
+      send(socket, { type: 'room-created', roomCode: code, sessionToken: room.hostToken });
       return;
     }
 
@@ -65,11 +66,32 @@ wss.on('connection', (socket) => {
       const room = rooms.get(code);
       if (!room || !room.host) { send(socket, { type: 'error', message: 'That room is not live right now.' }); return; }
       const viewerId = crypto.randomUUID();
-      const viewer = { id: viewerId, name: String(message.name || 'Guest').slice(0, 32), socket, approved: false };
+      const viewer = { id: viewerId, token: crypto.randomUUID(), name: String(message.name || 'Guest').slice(0, 32), socket, approved: false, cleanupTimer: null };
       room.viewers.set(viewerId, viewer);
       participant = { role: 'viewer', roomCode: code, viewerId };
-      send(socket, { type: 'waiting', roomCode: code });
+      send(socket, { type: 'waiting', roomCode: code, sessionToken: viewer.token });
       send(room.host, { type: 'join-request', viewerId, name: viewer.name });
+      return;
+    }
+
+    if (message.type === 'resume-room') {
+      const code = String(message.roomCode || '').toUpperCase();
+      const room = rooms.get(code);
+      if (!room) { send(socket, { type: 'error', message: 'That room is no longer available.' }); return; }
+      if (message.role === 'host' && message.sessionToken === room.hostToken) {
+        clearTimeout(room.cleanupTimer); room.cleanupTimer = null; room.host = socket;
+        participant = { role: 'host', roomCode: code };
+        send(socket, { type: 'room-resumed', role: 'host', roomCode: code, policy: room.policy, viewers: [...room.viewers.values()].filter((viewer) => viewer.approved).map((viewer) => ({ viewerId: viewer.id, name: viewer.name })), pendingViewers: [...room.viewers.values()].filter((viewer) => !viewer.approved).map((viewer) => ({ viewerId: viewer.id, name: viewer.name })) });
+        return;
+      }
+      const viewer = [...room.viewers.values()].find((item) => item.token === message.sessionToken);
+      if (message.role === 'viewer' && viewer) {
+        clearTimeout(viewer.cleanupTimer); viewer.cleanupTimer = null; viewer.socket = socket;
+        participant = { role: 'viewer', roomCode: code, viewerId: viewer.id };
+        send(socket, { type: 'room-resumed', role: 'viewer', roomCode: code, viewerId: viewer.id, approved: viewer.approved, name: viewer.name, policy: room.policy });
+        return;
+      }
+      send(socket, { type: 'error', message: 'That session can no longer be resumed.' });
       return;
     }
 
@@ -92,6 +114,12 @@ wss.on('connection', (socket) => {
       if (!viewer) return;
       send(viewer.socket, { type: 'rejected' });
       room.viewers.delete(message.viewerId);
+      return;
+    }
+
+    if (participant.role === 'host' && message.type === 'end-room') {
+      for (const viewer of room.viewers.values()) send(viewer.socket, { type: 'room-ended' });
+      rooms.delete(participant.roomCode); participant = null; socket.close();
       return;
     }
 
@@ -158,12 +186,21 @@ wss.on('connection', (socket) => {
     const room = rooms.get(participant.roomCode);
     if (!room) return;
     if (participant.role === 'host') {
-      for (const viewer of room.viewers.values()) send(viewer.socket, { type: 'room-ended' });
-      rooms.delete(participant.roomCode);
+      if (room.host !== socket) return;
+      room.host = null;
+      room.cleanupTimer = setTimeout(() => {
+        for (const viewer of room.viewers.values()) send(viewer.socket, { type: 'room-ended' });
+        rooms.delete(participant.roomCode);
+      }, RECONNECT_GRACE);
     } else {
-      if (room.screenSharer === participant.viewerId) broadcast(room, { type: 'screen-share-stop' }, socket);
-      room.viewers.delete(participant.viewerId);
-      send(room.host, { type: 'viewer-left', viewerId: participant.viewerId });
+      const viewer = room.viewers.get(participant.viewerId);
+      if (!viewer || viewer.socket !== socket) return;
+      viewer.socket = null;
+      viewer.cleanupTimer = setTimeout(() => {
+        if (room.screenSharer === participant.viewerId) broadcast(room, { type: 'screen-share-stop' });
+        room.viewers.delete(participant.viewerId);
+        send(room.host, { type: 'viewer-left', viewerId: participant.viewerId });
+      }, RECONNECT_GRACE);
     }
   });
 });

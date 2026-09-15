@@ -4,6 +4,10 @@ const landing = $('#landing'); const studio = $('#studio'); const viewer = $('#v
 
 function show(view) { [landing, studio, viewer].forEach((item) => item.classList.add('hidden')); view.classList.remove('hidden'); }
 function toast(message) { const element = $('#toast'); element.textContent = message; element.classList.add('show'); setTimeout(() => element.classList.remove('show'), 3200); }
+function sessionKey(roomCode) { return `open-room-session-${roomCode}`; }
+function saveSession(session) { localStorage.setItem(sessionKey(session.roomCode), JSON.stringify(session)); }
+function savedSession(roomCode) { try { return JSON.parse(localStorage.getItem(sessionKey(roomCode)) || 'null'); } catch { return null; } }
+function clearSession(roomCode) { localStorage.removeItem(sessionKey(roomCode)); }
 function connect() { state.socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`); state.socket.addEventListener('message', (event) => handleMessage(JSON.parse(event.data))); state.socket.addEventListener('close', () => { if (state.role === 'viewer') toast('The connection closed.'); }); }
 function send(message) { if (state.socket?.readyState === WebSocket.OPEN) state.socket.send(JSON.stringify(message)); }
 function roomUrl(code) { return `${location.origin}${location.pathname}?room=${code}`; }
@@ -23,8 +27,8 @@ $('#start-live').addEventListener('click', async () => {
 $('#join-form').addEventListener('submit', (event) => { event.preventDefault(); state.role = 'viewer'; state.roomCode = $('#room-code').value.trim().toUpperCase(); state.name = $('#guest-name').value.trim(); if (!state.roomCode || !state.name) return; $('#viewer-name-tile').textContent = state.name; $('#viewer-room-label').textContent = `ROOM ${state.roomCode}`; show(viewer); connect(); state.socket.addEventListener('open', () => send({ type: 'join-room', roomCode: state.roomCode, name: state.name }), { once: true }); });
 
 $('#copy-link').addEventListener('click', async () => { await navigator.clipboard.writeText($('#share-link-text').dataset.url); toast('Invite link copied.'); });
-$('#end-live').addEventListener('click', () => { stopAllMedia(); state.socket?.close(); location.href = location.pathname; });
-$('#leave-meeting').addEventListener('click', () => { stopAllMedia(); state.socket?.send(JSON.stringify({ type: 'leave-room' })); state.socket?.close(); location.href = location.pathname; });
+$('#end-live').addEventListener('click', () => { stopAllMedia(); clearSession(state.roomCode); state.socket?.send(JSON.stringify({ type: 'end-room' })); state.socket?.close(); location.href = location.pathname; });
+$('#leave-meeting').addEventListener('click', () => { stopAllMedia(); clearSession(state.roomCode); state.socket?.send(JSON.stringify({ type: 'leave-room' })); state.socket?.close(); location.href = location.pathname; });
 
 async function requestMedia(kind) {
   if (kind === 'camera' && !state.policy.camera) return toast('The host has disabled guest cameras.');
@@ -142,15 +146,26 @@ function updateRequestCount() { $('#request-count').textContent = document.query
 function escapeHtml(value) { return value.replace(/[&<>'"]/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char])); }
 
 async function handleMessage(message) {
-  if (message.type === 'room-created') { state.roomCode = message.roomCode; $('#studio-room-code').textContent = message.roomCode; $('#share-link-text').textContent = roomUrl(message.roomCode); $('#share-link-text').dataset.url = roomUrl(message.roomCode); show(studio); history.replaceState({}, '', `?room=${message.roomCode}`); }
+  if (message.type === 'room-created') { state.roomCode = message.roomCode; saveSession({ role: 'host', roomCode: message.roomCode, sessionToken: message.sessionToken }); $('#studio-room-code').textContent = message.roomCode; $('#share-link-text').textContent = roomUrl(message.roomCode); $('#share-link-text').dataset.url = roomUrl(message.roomCode); show(studio); history.replaceState({}, '', `?room=${message.roomCode}`); }
+  if (message.type === 'room-resumed') {
+    state.roomCode = message.roomCode;
+    if (message.role === 'host') {
+      $('#studio-room-code').textContent = message.roomCode; $('#share-link-text').textContent = roomUrl(message.roomCode); $('#share-link-text').dataset.url = roomUrl(message.roomCode); state.policy = message.policy; $('#viewer-count').textContent = `${message.viewers.length} viewer${message.viewers.length === 1 ? '' : 's'}`; show(studio);
+      message.pendingViewers.forEach((viewer) => addRequest(viewer.viewerId, viewer.name));
+      message.viewers.forEach((viewer) => { state.viewerNames.set(viewer.viewerId, viewer.name); makeHostPeer(viewer.viewerId); });
+    } else {
+      state.viewerId = message.viewerId; state.name = message.name; state.policy = message.policy; $('#viewer-name-tile').textContent = state.name; $('#viewer-room-label').textContent = `ROOM ${message.roomCode}`; show(viewer);
+      if (message.approved) toast('Reconnected to the live.');
+    }
+  }
   if (message.type === 'join-request') addRequest(message.viewerId, message.name);
   if (message.type === 'viewer-left') { document.querySelector(`[data-viewer-id="${message.viewerId}"]`)?.remove(); state.peers.get(message.viewerId)?.close(); state.peers.delete(message.viewerId); state.viewerNames.delete(message.viewerId); }
   if (message.type === 'viewer-count') $('#viewer-count').textContent = `${message.count} viewer${message.count === 1 ? '' : 's'}`;
   if (message.type === 'media-policy') { state.policy = message.policy; $('#viewer-mic').disabled = !state.policy.mic; $('#viewer-camera').disabled = !state.policy.camera; if (!state.policy.mic) setMedia('audio', false); if (!state.policy.camera) setMedia('video', false); }
   if (message.type === 'chat') { addChatMessage(state.role === 'host' ? $('#host-chat') : $('#viewer-chat'), message); }
   if (message.type === 'renegotiate' && state.role === 'host') { const peer = state.peers.get(message.viewerId); if (peer) await renegotiatePeer(message.viewerId, peer); }
-  if (message.type === 'waiting') { show(viewer); $('#viewer-room-label').textContent = `ROOM ${message.roomCode}`; }
-  if (message.type === 'approved') { state.viewerId = message.viewerId; toast('You are in. Connecting to the room…'); }
+  if (message.type === 'waiting') { state.roomCode = message.roomCode; state.sessionToken = message.sessionToken; saveSession({ role: 'viewer', roomCode: state.roomCode, sessionToken: state.sessionToken, name: state.name }); show(viewer); $('#viewer-room-label').textContent = `ROOM ${message.roomCode}`; }
+  if (message.type === 'approved') { state.viewerId = message.viewerId; saveSession({ role: 'viewer', roomCode: state.roomCode, sessionToken: state.sessionToken, name: state.name }); toast('You are in. Connecting to the room…'); }
   if (message.type === 'screen-share-approved') { state.screenSharePending = false; startScreenCapture(); }
   if (message.type === 'screen-share-denied') { state.screenSharePending = false; toast(message.message); }
   if (message.type === 'screen-share-start') { state.screenShareOwner = message.owner; applyScreenShare(message.owner); if (message.owner.role === 'host' && state.role === 'viewer') attachVideoStream($('#viewer-screen-video'), $('#remote-video').srcObject); }
@@ -176,6 +191,12 @@ async function handleSignal(message) {
 
 const queryRoom = new URLSearchParams(location.search).get('room');
 if (queryRoom) {
+  const session = savedSession(queryRoom.toUpperCase());
+  if (session?.role === 'host' || session?.role === 'viewer') {
+    state.role = session.role; state.roomCode = session.roomCode; state.sessionToken = session.sessionToken; state.name = session.name || '';
+    if (state.role === 'viewer') { $('#viewer-name-tile').textContent = state.name; $('#viewer-room-label').textContent = `ROOM ${state.roomCode}`; show(viewer); }
+    connect(); state.socket.addEventListener('open', () => send({ type: 'resume-room', role: state.role, roomCode: state.roomCode, sessionToken: state.sessionToken }), { once: true });
+  }
   $('#room-code').value = queryRoom.toUpperCase();
   $('#room-code').required = false;
   $('#room-code-field').classList.add('hidden');
