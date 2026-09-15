@@ -7,6 +7,13 @@ function toast(message) { const element = $('#toast'); element.textContent = mes
 function connect() { state.socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`); state.socket.addEventListener('message', (event) => handleMessage(JSON.parse(event.data))); state.socket.addEventListener('close', () => { if (state.role === 'viewer') toast('The connection closed.'); }); }
 function send(message) { if (state.socket?.readyState === WebSocket.OPEN) state.socket.send(JSON.stringify(message)); }
 function roomUrl(code) { return `${location.origin}${location.pathname}?room=${code}`; }
+function attachVideoStream(video, stream) {
+  if (!video) return;
+  video.srcObject = stream || null;
+  if (!stream) return;
+  const playback = video.play();
+  if (playback?.catch) playback.catch(() => {});
+}
 
 $('#start-live').addEventListener('click', async () => {
   state.role = 'host'; connect();
@@ -27,6 +34,7 @@ async function requestMedia(kind) {
     const media = await navigator.mediaDevices.getUserMedia(wanted);
     if (!state.stream) state.stream = new MediaStream();
     media.getTracks().forEach((track) => { state.stream.addTrack(track); state.media[track.kind === 'video' ? 'camera' : 'mic'] = true; addTrackToPeers(track); });
+    if (kind === 'camera') attachVideoStream(state.role === 'host' ? $('#local-video') : $('#viewer-local-video'), state.stream);
     updateMediaButtons();
     if (state.role === 'viewer') send({ type: 'renegotiate' }); else state.peers.forEach((peer, viewerId) => renegotiatePeer(viewerId, peer));
   } catch (error) { toast(error.name === 'NotAllowedError' ? 'Allow device access in your browser to turn this on.' : 'This device could not provide that media.'); }
@@ -61,7 +69,7 @@ function applyScreenShare(owner) {
   button.disabled = active && !localScreenOwner(owner);
   button.textContent = localScreenOwner(owner) ? 'Stop sharing' : 'Share screen';
   if (fullscreen) fullscreen.disabled = !active;
-  if (localScreenOwner(owner) && state.screenStream) video.srcObject = state.screenStream;
+  if (localScreenOwner(owner) && state.screenStream) attachVideoStream(video, state.screenStream);
 }
 function stopScreenShare(notify = true) {
   if (!state.screenStream && !state.screenSharing) return;
@@ -72,7 +80,7 @@ function stopScreenShare(notify = true) {
     peer.getSenders().find((item) => item.track?.kind === 'video')?.replaceTrack(camera);
     peer.getSenders().find((item) => item.track?.kind === 'audio')?.replaceTrack(microphone);
   });
-  if (state.role === 'host') $('#local-video').srcObject = state.stream || null; else $('#viewer-local-video').srcObject = state.stream || null;
+  attachVideoStream(state.role === 'host' ? $('#local-video') : $('#viewer-local-video'), state.stream);
   state.screenStream = null; state.screenSharing = false; state.screenSharePending = false; state.screenShareOwner = null; applyScreenShare(null);
   if (notify) send({ type: 'screen-share-stop' });
 }
@@ -125,8 +133,8 @@ function addRemoteViewer(viewerId, stream) {
     tile.innerHTML = `<video autoplay playsinline></video><span>${escapeHtml(state.viewerNames.get(viewerId) || 'Guest')}</span>`;
     $('#host-video-grid').appendChild(tile);
   }
-  tile.querySelector('video').srcObject = stream;
-  if (state.screenShareOwner?.role === 'viewer' && state.screenShareOwner.viewerId === viewerId) $('#host-screen-video').srcObject = stream;
+  attachVideoStream(tile.querySelector('video'), stream);
+  if (state.screenShareOwner?.role === 'viewer' && state.screenShareOwner.viewerId === viewerId) attachVideoStream($('#host-screen-video'), stream);
 }
 
 function addRequest(viewerId, name) { state.viewerNames.set(viewerId, name); const list = $('#request-list'); const empty = list.querySelector('.empty-state'); if (empty) empty.remove(); const item = document.createElement('div'); item.className = 'request'; item.dataset.viewerId = viewerId; item.innerHTML = `<span>${escapeHtml(name)}</span><span class="request-actions"><button class="approve" title="Approve">✓</button><button class="reject" title="Decline">×</button></span>`; item.querySelector('.approve').onclick = () => { send({ type: 'approve-viewer', viewerId }); item.remove(); updateRequestCount(); makeHostPeer(viewerId); }; item.querySelector('.reject').onclick = () => { send({ type: 'reject-viewer', viewerId }); item.remove(); updateRequestCount(); }; list.appendChild(item); updateRequestCount(); }
@@ -145,7 +153,7 @@ async function handleMessage(message) {
   if (message.type === 'approved') { state.viewerId = message.viewerId; toast('You are in. Connecting to the room…'); }
   if (message.type === 'screen-share-approved') { state.screenSharePending = false; startScreenCapture(); }
   if (message.type === 'screen-share-denied') { state.screenSharePending = false; toast(message.message); }
-  if (message.type === 'screen-share-start') { state.screenShareOwner = message.owner; applyScreenShare(message.owner); if (message.owner.role === 'host' && state.role === 'viewer') $('#viewer-screen-video').srcObject = $('#remote-video').srcObject; }
+  if (message.type === 'screen-share-start') { state.screenShareOwner = message.owner; applyScreenShare(message.owner); if (message.owner.role === 'host' && state.role === 'viewer') attachVideoStream($('#viewer-screen-video'), $('#remote-video').srcObject); }
   if (message.type === 'screen-share-stop') { state.screenShareOwner = null; if (state.screenSharing) stopScreenShare(false); else applyScreenShare(null); }
   if (message.type === 'rejected') { toast('The host did not approve this request.'); setTimeout(() => location.href = location.pathname, 2200); }
   if (message.type === 'room-ended') { $('#viewer-waiting').innerHTML = '<span class="waiting-mark">×</span><p class="eyebrow">Room closed</p><h1>The live has ended.</h1><p>Thanks for stopping by.</p>'; }
@@ -162,7 +170,7 @@ async function addPendingCandidates(peerKey, peer) {
 async function handleSignal(message) {
   if (state.role === 'host') { const peer = state.peers.get(message.viewerId); if (!peer) return; if (message.signal.description) { await peer.setRemoteDescription(message.signal.description); await addPendingCandidates(message.viewerId, peer); } if (message.signal.candidate) { if (peer.remoteDescription) await peer.addIceCandidate(message.signal.candidate); else state.pendingCandidates.set(message.viewerId, [...(state.pendingCandidates.get(message.viewerId) || []), message.signal.candidate]); } return; }
   let peer = state.peers.get('host');
-  if (!peer) { peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); state.peers.set('host', peer); peer.ontrack = (event) => { $('#remote-video').srcObject = event.streams[0]; if (state.screenShareOwner?.role === 'host') $('#viewer-screen-video').srcObject = event.streams[0]; $('#viewer-waiting').classList.add('hidden'); $('#viewer-stage').classList.remove('hidden'); }; peer.onicecandidate = (event) => event.candidate && send({ type: 'signal', signal: { candidate: event.candidate } }); peer.onconnectionstatechange = () => { if (['failed', 'disconnected'].includes(peer.connectionState)) toast('The live connection was interrupted.'); }; }
+  if (!peer) { peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); state.peers.set('host', peer); peer.ontrack = (event) => { attachVideoStream($('#remote-video'), event.streams[0]); if (state.screenShareOwner?.role === 'host') attachVideoStream($('#viewer-screen-video'), event.streams[0]); $('#viewer-waiting').classList.add('hidden'); $('#viewer-stage').classList.remove('hidden'); }; peer.onicecandidate = (event) => event.candidate && send({ type: 'signal', signal: { candidate: event.candidate } }); peer.onconnectionstatechange = () => { if (['failed', 'disconnected'].includes(peer.connectionState)) toast('The live connection was interrupted.'); }; }
   if (message.signal.description) { await peer.setRemoteDescription(message.signal.description); await addPendingCandidates('host', peer); if (message.signal.description.type === 'offer') { const answer = await peer.createAnswer(); await peer.setLocalDescription(answer); send({ type: 'signal', signal: { description: peer.localDescription } }); } } if (message.signal.candidate) { if (peer.remoteDescription) await peer.addIceCandidate(message.signal.candidate); else state.pendingCandidates.set('host', [...(state.pendingCandidates.get('host') || []), message.signal.candidate]); }
 }
 
